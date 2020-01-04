@@ -5,7 +5,7 @@ class ChiralIsomorphism():
     """ Disambiguate chiral centers from graph isomorphism
         Based on OpenBabel"""
 
-    def map(self, obmol1, obmol2):
+    def __call__(self, obmol1, obmol2):
         """ this is the main function inside this class """
 
         # OpenBabel graph isomorphism
@@ -74,6 +74,7 @@ class ChiralIsomorphism():
             if rmsd < lowest_rmsd:
                 best_mapping = mapping
                 best_idx = idx
+                lowest_rmsd = rmsd
             i += 1
         return best_mapping, best_idx
 
