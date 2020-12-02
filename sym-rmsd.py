@@ -7,6 +7,26 @@ import os
 import sys
 import openbabel as ob
 
+#def index_before_deleting_hydrogens(index, del_atoms):
+#    """0-indexed"""
+#    offset = 0
+#    for d in del_atoms:
+#        if d <= (index + offset):
+#            offset += 1
+#    return index + offset
+
+
+def print_obmorphs(obrmsd_obj):
+    indices_list = []
+    for morph in obrmsd_obj.morphs:
+        indices = []
+        for i,index in enumerate(morph):
+            if not obrmsd_obj.static[i]:
+                indices.append(index)
+        indices_list.append(",".join(["%d" % (i+1) for i in indices]))
+    text="symmetry_indices={%s}" % ("|".join(indices_list))
+    return text
+
 class OBRMSD():
     def __init__(self, ref_obmol, test_obmol, graph='isomorph'):
         self.graph      = graph
@@ -132,10 +152,9 @@ class OBRMSD():
             for (i, idx) in enumerate(morph):
                 counts[i].append(idx)   # append morphisms
         static = [len(set(count)) == 1 for count in counts] # no symmetry mates!
-    
         return my_morphs, static
 
-def readmol(fname):
+def readmol(fname, keep_hydrogens=False, deleted_atoms = []):
     extension = fname.split('.')[-1]
     obmol_generator = pybel.readfile(extension, fname)
     obmols = [mol.OBMol for mol in obmol_generator]
@@ -145,8 +164,10 @@ def readmol(fname):
             #if atom.IsNonPolarHydrogen():
             if atom.IsHydrogen():
                 to_del.append(atom)
-        for atom in to_del[::-1]:
-            obmol.DeleteAtom(atom)
+        if not keep_hydrogens:
+            for atom in to_del[::-1]:
+                obmol.DeleteAtom(atom)
+        deleted_atoms.append(to_del) # to match indices
     return obmols
 
 
@@ -155,15 +176,20 @@ def main():
     # parse user input
     parser = argparse.ArgumentParser()
     parser.add_argument('ref', help='reference molecule for rmsd calculation')
-    parser.add_argument('query', help='query molecule for rmsd calculation')
+    parser.add_argument('query', help='query molecule(s) for rmsd calculation')
+    parser.add_argument('--symmetry_indices', help='print indices mapping', action='store_true')
+    parser.add_argument('--keep_hydrogen', help='do not delete hydrogens', action='store_true')
     args = parser.parse_args(sys.argv[1:])
+    print(args) 
 
     # read molecules
-    refs = readmol(args.ref)
+    ref_deleted_atoms = []
+    queries_deleted_atoms = []
+    refs = readmol(args.ref, args.keep_hydrogen, ref_deleted_atoms)
     if len(refs) != 1:
         sys.stderr.write('The reference molecule must contain 1 conformer\n')
         sys.exit(2)
-    queries = readmol(args.query)
+    queries = readmol(args.query, args.keep_hydrogen, queries_deleted_atoms)
 
     # check if molecule is the same - _can_onical smiles
     ext_r = os.path.splitext(args.ref)[1].replace('.', '')
@@ -172,17 +198,22 @@ def main():
     q = pybel.readfile(ext_q, args.query).next()
     r.OBMol.CorrectForPH(7.4)
     q.OBMol.CorrectForPH(7.4)
-    can_ref = r.write('can').split()[0]
-    can_q = q.write('can').split()[0]
-    if can_ref != can_q:
-        sys.stderr.write('Different canonical smiles for input molecules\n')
-        sys.stderr.write('%s\n' % can_ref)
-        sys.stderr.write('%s\n' % can_q)
-       # print "-2"
-       # sys.exit()
+    ### print 4
+    ### can_ref = r.write('can').split()[0]
+    ### print 5
+    ### can_q = q.write('can').split()[0]
+    ### print 6
+    ### if can_ref != can_q:
+    ###     sys.stderr.write('Different canonical smiles for input molecules\n')
+    ###     sys.stderr.write('%s\n' % can_ref)
+    ###     sys.stderr.write('%s\n' % can_q)
+    ###    # print "-2"
+    ###    # sys.exit()
 
     # initialize rmsd calculator
     obrmsd = OBRMSD(refs[0], queries[0])
+    if args.symmetry_indices:
+        print(print_obmorphs(obrmsd))
 
     for query in queries:
         rmsd = obrmsd.rmsd(query)
