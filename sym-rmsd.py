@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import argparse, sys
-import pybel
 import math
 import os
 import sys
-import openbabel as ob
+from openbabel import openbabel as ob
+from meeko import obutils
 
 #def index_before_deleting_hydrogens(index, del_atoms):
 #    """0-indexed"""
@@ -106,20 +106,16 @@ class OBRMSD():
             rt = [a for a in ob.OBMolAtomIter(ref)]
             mt = [a for a in ob.OBMolAtomIter(mol)]
             for (r,m) in zip(rt, mt):
-                print r.GetType(), m.GetType(), r.GetType()==m.GetType()
+                print(r.GetType(), m.GetType(), r.GetType()==m.GetType())
             r = self._atoms2obabel(ref_atoms, ref_type)
             m = self._atoms2obabel(mol_atoms)
-            ro = pybel.Outputfile('mol2','ref.mol2')
-            mo = pybel.Outputfile('mol2','mol.mol2')
-            ro.write(r)
-            mo.write(m)
-            ro.close()
-            mo.close()
+            obutils.writeMolecule(r, 'ref.mol2', ftype='mol2')
+            obutils.writeMolecule(m, 'mol.mol2', ftype='mol2')
     
         # Mapping magic
-        query = pybel.ob.CompileMoleculeQuery(ref)
-        mapper = pybel.ob.OBIsomorphismMapper.GetInstance(query)
-        isomorphs = pybel.ob.vvpairUIntUInt()
+        query = ob.CompileMoleculeQuery(ref)
+        mapper = ob.OBIsomorphismMapper.GetInstance(query)
+        isomorphs = ob.vvpairUIntUInt()
         mapper.MapAll(mol, isomorphs)
         return isomorphs
 
@@ -145,6 +141,9 @@ class OBRMSD():
 
         # 1st :: conversion
         my_morphs = [self._morph2idx(obmorph) for obmorph in obmorphs]
+
+        if len(my_morphs) == 0:
+            raise RuntimeError("oops, no mapping was possible :-(")
     
         # 2nd :: find static atoms, no symmetry mates
         counts = [[] for (i,j) in obmorphs[0]] # stores indxs for a given position
@@ -156,13 +155,13 @@ class OBRMSD():
 
 def readmol(fname, keep_hydrogens=False, deleted_atoms = []):
     extension = fname.split('.')[-1]
-    obmol_generator = pybel.readfile(extension, fname)
-    obmols = [mol.OBMol for mol in obmol_generator]
+    obmol_generator = obutils.OBMolSupplier(fname, extension)
+    obmols = [mol for mol in obmol_generator]
     for obmol in obmols:
         to_del = []
         for atom in ob.OBMolAtomIter(obmol):
             #if atom.IsNonPolarHydrogen():
-            if atom.IsHydrogen():
+            if atom.GetAtomicNum() == 1:
                 to_del.append(atom)
         if not keep_hydrogens:
             for atom in to_del[::-1]:
@@ -180,7 +179,6 @@ def main():
     parser.add_argument('--symmetry_indices', help='print indices mapping', action='store_true')
     parser.add_argument('--keep_hydrogen', help='do not delete hydrogens', action='store_true')
     args = parser.parse_args(sys.argv[1:])
-    print(args) 
 
     # read molecules
     ref_deleted_atoms = []
@@ -194,10 +192,10 @@ def main():
     # check if molecule is the same - _can_onical smiles
     ext_r = os.path.splitext(args.ref)[1].replace('.', '')
     ext_q = os.path.splitext(args.query)[1].replace('.', '')
-    r = pybel.readfile(ext_r, args.ref).next()
-    q = pybel.readfile(ext_q, args.query).next()
-    r.OBMol.CorrectForPH(7.4)
-    q.OBMol.CorrectForPH(7.4)
+    r = obutils.load_molecule_from_file(args.ref, ext_r)
+    q = obutils.load_molecule_from_file(args.query, ext_q)
+    r.CorrectForPH(7.4)
+    q.CorrectForPH(7.4)
     ### print 4
     ### can_ref = r.write('can').split()[0]
     ### print 5
@@ -217,7 +215,7 @@ def main():
 
     for query in queries:
         rmsd = obrmsd.rmsd(query)
-        print '%6.2f' % rmsd
+        print('%6.2f' % rmsd)
 
 if __name__ == '__main__':
     main()
